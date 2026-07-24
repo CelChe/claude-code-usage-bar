@@ -1,4 +1,20 @@
+import pytest
+
 import claude_statusbar.updater as updater
+
+# Captured before the autouse fixture below stubs it out for every test.
+_REAL_IS_SOURCE_CHECKOUT = updater._is_source_checkout
+
+
+@pytest.fixture(autouse=True)
+def _not_a_source_checkout(monkeypatch):
+    """Default every test to the installed-copy case.
+
+    The suite normally runs from an editable clone, where the real
+    `_is_source_checkout()` is True and short-circuits the upgrade paths.
+    Tests that care about the guard override this explicitly.
+    """
+    monkeypatch.setattr(updater, "_is_source_checkout", lambda: False)
 
 
 def test_detect_install_channel_uv():
@@ -148,3 +164,38 @@ def test_upgrade_current_install_reports_manual_command(monkeypatch):
 
     assert ok is False
     assert "uv tool install --upgrade claude-statusbar" in msg
+
+
+def test_auto_upgrade_refuses_to_clobber_source_checkout(monkeypatch):
+    """A PyPI install over an editable clone silently replaces local commits."""
+    monkeypatch.setattr(updater, "_is_source_checkout", lambda: True)
+    monkeypatch.setattr(
+        updater, "_run_upgrade",
+        lambda cmd: pytest.fail(f"attempted upgrade over a checkout: {cmd}"),
+    )
+
+    assert updater.auto_upgrade() is False
+
+
+def test_upgrade_current_install_points_at_git_pull_for_checkout(monkeypatch):
+    monkeypatch.setattr(updater, "_is_source_checkout", lambda: True)
+    monkeypatch.setattr(updater, "get_current_version", lambda: "3.32.0")
+    monkeypatch.setattr(
+        updater, "_run_upgrade",
+        lambda cmd: pytest.fail(f"attempted upgrade over a checkout: {cmd}"),
+    )
+
+    ok, msg = updater.upgrade_current_install()
+
+    assert ok is False
+    assert "git -C" in msg and "pull" in msg
+
+
+def test_source_checkout_detected_for_this_clone():
+    """Guards the layout sniff itself — only meaningful when the suite runs
+    from the repo (the normal `pip install -e .` dev setup)."""
+    from pathlib import Path
+    repo = Path(updater.__file__).resolve().parents[2]
+    if not (repo / "pyproject.toml").is_file():
+        pytest.skip("not running from a source checkout")
+    assert _REAL_IS_SOURCE_CHECKOUT() is True

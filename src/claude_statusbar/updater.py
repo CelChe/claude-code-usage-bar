@@ -31,6 +31,26 @@ def _is_frozen() -> bool:
     is the binary, not a Python — so the upgrade path re-runs install.sh instead.
     """
     return bool(getattr(sys, "frozen", False))
+
+
+def _is_source_checkout() -> bool:
+    """True when this package is imported from a source tree (`pip install -e`
+    of a clone), rather than from an installed copy in site-packages.
+
+    A PyPI upgrade over an editable install silently replaces the checkout's
+    code with the published release — local commits stop taking effect and
+    the cause is invisible from the status bar. Detected by looking for the
+    repo's `pyproject.toml` two levels up (`<repo>/src/claude_statusbar/`).
+
+    ponytail: layout sniff, not import-machinery introspection. If the source
+    layout ever changes, prefer `importlib.metadata` direct_url.json.
+    """
+    try:
+        return (Path(__file__).resolve().parents[2] / "pyproject.toml").is_file()
+    except (OSError, IndexError):
+        return False
+
+
 # The background check writes the latest PyPI version here; the render path
 # reads it (cheap, no network) to show a `↑<newver>` update hint on the bar.
 LATEST_VERSION_CACHE = Path.home() / ".cache" / "claude-statusbar" / "latest_version.json"
@@ -202,6 +222,11 @@ def auto_upgrade() -> bool:
         # users still see the `↑<newver>` hint and can re-run install.sh.
         return False
 
+    if _is_source_checkout():
+        # Running from a clone — a PyPI install would clobber it. Silent by
+        # design: this fires from a detached background process nobody reads.
+        return False
+
     if _run_upgrade(get_upgrade_command()):
         return True
 
@@ -229,6 +254,15 @@ def upgrade_current_install() -> Tuple[bool, str]:
             + (f" — v{latest} available." if newer else " is up to date (per PyPI).")
         )
         return False, f"{headline}\nUpdate the binary with:\n  {BINARY_UPGRADE_HINT}"
+
+    if _is_source_checkout():
+        repo = Path(__file__).resolve().parents[2]
+        return False, (
+            f"Running from a source checkout (v{current}) at {repo}\n"
+            "Refusing to install over it. Update with:\n"
+            "  git -C "
+            f"{repo} pull"
+        )
 
     cmd = get_upgrade_command()
 
