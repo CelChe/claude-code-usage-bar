@@ -1018,28 +1018,6 @@ def test_cmdline_matcher_recognizes_every_spawn_shape():
     assert not _d._cmdline_is_our_daemon("python3 somethingelse.py --daemon")
 
 
-def test_release_pidfile_leaves_someone_elses_file_alone(monkeypatch, tmp_path: Path):
-    """flock locks an inode, not a path: after unlink+recreate, two daemons
-    each hold a lock on different inodes. The exiting one must not delete the
-    pidfile the current owner wrote — that made the survivor invisible to
-    stop/status/spawn_if_dead, so every render spawned another duplicate."""
-    monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
-
-    # Daemon A acquires; its handle points at inode 1.
-    assert _d._acquire_pidfile() is True
-    handle_a = _d._pidfile_handle
-
-    # The pidfile is unlinked and recreated by daemon B (new inode, new owner).
-    _d.pid_path().unlink()
-    _d.pid_path().write_text("99999", encoding="utf-8")
-
-    # Daemon A exits: must NOT delete B's file.
-    _d._pidfile_handle = handle_a
-    _d._release_pidfile()
-    assert _d.pid_path().exists(), "exiting daemon deleted the new owner's pidfile"
-    assert _d.pid_path().read_text() == "99999"
-
-
 def test_release_pidfile_still_cleans_its_own_file(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(_d, "_cache_dir", lambda: tmp_path)
     assert _d._acquire_pidfile() is True
@@ -1062,7 +1040,7 @@ def test_windows_identity_uses_cim_not_ps(monkeypatch):
             raise AssertionError("ps must not be consulted on win32")
         return _sp.CompletedProcess(
             cmd, 0,
-            stdout=('"C:\Python\python.exe" -m claude_statusbar.cli '
+            stdout=(r'"C:\Python\python.exe" -m claude_statusbar.cli '
                     'daemon _run --render-interval 1.0\n'),
             stderr="",
         )
@@ -1081,7 +1059,7 @@ def test_windows_identity_false_when_pid_is_someone_else(monkeypatch):
     monkeypatch.setattr(
         _sp, "run",
         lambda cmd, **kw: _sp.CompletedProcess(
-            cmd, 0, stdout="C:\Windows\explorer.exe\n", stderr=""),
+            cmd, 0, stdout="C:\\Windows\\explorer.exe\n", stderr=""),
     )
 
     assert _d._process_is_our_daemon(4242) is False

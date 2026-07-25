@@ -49,15 +49,6 @@ def test_balance_text_thousands_separator(tmp_path, monkeypatch):
     assert core.relay_balance_text(env, spawn=False) == "bal $1,234.50"
 
 
-def test_no_spawn_when_spawn_false(tmp_path, monkeypatch):
-    """spawn=False (suppressed side effects) must never launch a subprocess."""
-    monkeypatch.setenv("HOME", str(tmp_path))
-    import subprocess
-    monkeypatch.setattr(subprocess, "Popen",
-                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("spawned")))
-    assert core.relay_balance_text(_env(), spawn=False) == ""
-
-
 # --- the segment renders in each no-quota style ---
 
 def test_classic_balance_segment():

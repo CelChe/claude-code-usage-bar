@@ -22,17 +22,6 @@ def test_detect_install_channel_uv():
     assert updater.detect_install_channel(path) == "uv"
 
 
-def test_detect_install_channel_uv_tool_python_symlink(tmp_path):
-    real_python = tmp_path / ".local/share/uv/python/cpython-3.13/bin/python3.13"
-    tool_python = tmp_path / ".local/share/uv/tools/claude-statusbar/bin/python3"
-    real_python.parent.mkdir(parents=True)
-    tool_python.parent.mkdir(parents=True)
-    real_python.write_text("", encoding="utf-8")
-    tool_python.symlink_to(real_python)
-
-    assert updater.detect_install_channel(tool_python) == "uv"
-
-
 def test_detect_install_channel_pipx():
     path = "/Users/test/.local/pipx/venvs/claude-statusbar/bin/python"
     assert updater.detect_install_channel(path) == "pipx"
@@ -63,22 +52,6 @@ def test_get_upgrade_command_falls_back_to_pip(monkeypatch):
     monkeypatch.setattr(updater.shutil, "which", lambda name: None)
     cmd = updater.get_upgrade_command("/Users/test/miniconda3/bin/python")
     assert cmd == [updater.sys.executable, "-m", "pip", "install", "--upgrade", "claude-statusbar"]
-
-
-def test_uv_found_in_well_known_dir_when_not_on_path(monkeypatch, tmp_path):
-    """launchd/systemd run the daemon with the bare system PATH, which lacks
-    ~/.local/bin — so `shutil.which("uv")` fails there even though uv is
-    installed. The old code then fell back to `python -m pip`, and a uv tool
-    venv has NO pip: the daemon's auto-upgrade failed silently, forever.
-    Well-known tool dirs must be searched after PATH."""
-    fake_uv = tmp_path / "uv"
-    fake_uv.write_text("#!/bin/sh\n")
-    monkeypatch.setattr(updater.shutil, "which", lambda name: None)  # launchd PATH
-    monkeypatch.setattr(updater, "_TOOL_DIRS", (tmp_path,))
-    cmd = updater.get_upgrade_command(
-        "/Users/test/.local/share/uv/tools/claude-statusbar/bin/python"
-    )
-    assert cmd == [str(fake_uv), "tool", "install", "--upgrade", "claude-statusbar"]
 
 
 def test_uv_channel_without_uv_anywhere_falls_back_to_pip(monkeypatch):

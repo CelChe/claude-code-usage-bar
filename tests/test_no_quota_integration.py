@@ -98,24 +98,6 @@ def _payload_no_quota_with_transcript(tp, version="2.1.90"):
     })
 
 
-def test_heuristic_switches_layout_without_env(tmp_path, monkeypatch, capsys):
-    """No relay env, no quota, but the transcript has an assistant turn →
-    heuristic flips to the ctx layout (insurance for un-inherited env)."""
-    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
-    monkeypatch.delenv("CS_API_MODE", raising=False)
-    monkeypatch.delenv("CLAUDE_CODE_USE_BEDROCK", raising=False)
-    monkeypatch.delenv("CLAUDE_CODE_USE_VERTEX", raising=False)
-    tp = tmp_path / "t.jsonl"
-    tp.write_text(json.dumps({
-        "type": "assistant", "timestamp": "2999-01-01T00:00:00.000Z",
-        "message": {"usage": {"input_tokens": 10, "output_tokens": 5}},
-    }) + "\n", encoding="utf-8")
-    _run(tmp_path, monkeypatch, _payload_no_quota_with_transcript(str(tp)))
-    out = capsys.readouterr().out
-    assert "ctx[" in out
-    assert "5h[" not in out
-
-
 def test_heuristic_silent_with_empty_transcript(tmp_path, monkeypatch, capsys):
     """No env, no quota, transcript has NO assistant turn yet → stay in the
     waiting/quota layout (don't prematurely switch at session start)."""

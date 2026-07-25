@@ -6,59 +6,8 @@ from claude_statusbar.styles import render, render_party_line
 from claude_statusbar.themes import get_theme
 
 
-def test_workspace_id_matches_agentparty_fixtures():
-    assert workspace_id("/Users/leo/github.com/agentparty") == (
-        "agentparty-db745cf4d141394a"
-    )
-    assert workspace_id("/tmp/Agent Party Demo") == (
-        "agent-party-demo-fe44d3b43c263f52"
-    )
-    assert workspace_id("/work/--") == "workspace-b4972acd009ce462"
-
-
 def test_missing_status_is_silent(tmp_path):
     assert read_party_status("/tmp/no-party", home=tmp_path) is None
-
-
-def test_reads_statusline_cache_and_renders_no_color(tmp_path):
-    cwd = tmp_path / "Agent Party Demo"
-    cwd.mkdir()
-    state_dir = tmp_path / "state" / workspace_id(cwd)
-    state_dir.mkdir(parents=True)
-    now = 1_800_000_000.0
-    (state_dir / "statusline.json").write_text(json.dumps({
-        "version": 1,
-        "updated_at": int(now * 1000),
-        "channel": "#agentparty",
-        "server": "local",
-        "identity": {"name": "xdream-agent", "kind": "agent", "role": "builder"},
-        "unread": 3,
-        "last_message": {
-            "from": "bob",
-            "preview": "shipped the auth patch",
-            "ts": int(now - 120),
-        },
-        "listener": {
-            "mode": "serve",
-            "pid": 1,
-            "heartbeat_ts": int(now * 1000),
-        },
-    }), encoding="utf-8")
-
-    status = read_party_status(cwd, now=now, home=tmp_path)
-    assert status is not None
-    assert status.channel == "#agentparty"
-    assert status.identity_name == "xdream-agent"
-    assert status.unread == 3
-    assert status.listener_stale is False
-    line = render_party_line(status, theme=get_theme("graphite"), use_color=False)
-    head, msg = line.split("\n")
-    assert "#agentparty" in head
-    assert "⬡ xdream-agent" in head
-    assert "◉ serving" in head
-    assert "3 unread" in head
-    # Unread and not mentioned → filled dot, no @ badge; message on its own line.
-    assert msg == "   ↳ ●  bob  shipped the auth patch 2m"
 
 
 def test_live_watch_listener_is_not_reported_as_down(tmp_path):

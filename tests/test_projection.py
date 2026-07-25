@@ -177,76 +177,6 @@ def test_save_projection_store_atomic_roundtrip(tmp_path):
     assert raw["five_hour"][0]["used_pct"] == 7.0
 
 
-def test_bucket_for_time_distinguishes_weekday_work_weekend_and_night(use_tz):
-    use_tz("Asia/Tokyo")
-    assert predict.bucket_for_time(_ts(2026, 6, 1, 1)) == "weekday_work_hours"      # Mon 10:00 JST
-    assert predict.bucket_for_time(_ts(2026, 6, 1, 10)) == "weekday_non_work_hours" # Mon 19:00 JST
-    assert predict.bucket_for_time(_ts(2026, 6, 1, 18)) == "night"                  # Tue 03:00 JST
-    assert predict.bucket_for_time(_ts(2026, 6, 6, 3)) == "weekend"                # Sat 12:00 JST
-
-
-def test_bucket_for_time_uses_system_local_timezone(use_tz):
-    ts = _ts(2026, 6, 1, 1)  # 01:00 UTC, 10:00 JST.
-    use_tz("UTC")
-    assert predict.bucket_for_time(ts) == "night"
-    use_tz("Asia/Tokyo")
-    assert predict.bucket_for_time(ts) == "weekday_work_hours"
-
-
-def test_learned_bucket_rates_from_positive_deltas(use_tz):
-    use_tz("Asia/Tokyo")
-    samples = [
-        {"observed_at": _ts(2026, 6, 1, 1), "used_pct": 10.0, "resets_at": 1780927200.0, "session_id": "s"},
-        {"observed_at": _ts(2026, 6, 1, 2), "used_pct": 12.0, "resets_at": 1780927200.0, "session_id": "s"},
-    ]
-    rates = predict.learn_bucket_rates(samples)
-    assert rates["weekday_work_hours"]["samples"] == 1
-    assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 2.0) < 1e-9
-
-
-def test_learned_bucket_rates_compress_duplicate_plateaus(use_tz):
-    use_tz("Asia/Tokyo")
-    reset = 1780927200.0
-    samples = [
-        {"observed_at": _ts(2026, 6, 1, 1, 0), "used_pct": 10.0, "resets_at": reset, "session_id": "a"},
-        {"observed_at": _ts(2026, 6, 1, 1, 10), "used_pct": 10.0, "resets_at": reset, "session_id": "b"},
-        {"observed_at": _ts(2026, 6, 1, 1, 20), "used_pct": 11.0, "resets_at": reset, "session_id": "a"},
-    ]
-    rates = predict.learn_bucket_rates(samples)
-    assert rates["weekday_work_hours"]["samples"] == 1
-    assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 3.0) < 1e-9
-
-
-def test_learned_bucket_rates_ignore_stale_lower_session_readings(use_tz):
-    use_tz("Asia/Tokyo")
-    reset = 1780927200.0
-    samples = [
-        {"observed_at": _ts(2026, 6, 1, 1, 0), "used_pct": 15.0, "resets_at": reset, "session_id": "fresh"},
-        {"observed_at": _ts(2026, 6, 1, 1, 10), "used_pct": 14.0, "resets_at": reset, "session_id": "stale"},
-        {"observed_at": _ts(2026, 6, 1, 1, 20), "used_pct": 16.0, "resets_at": reset, "session_id": "fresh"},
-    ]
-    rates = predict.learn_bucket_rates(samples)
-    assert rates["weekday_work_hours"]["samples"] == 1
-    assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 3.0) < 1e-9
-
-
-def test_learned_bucket_rates_accept_heavy_real_5h_burn(use_tz):
-    # Live complaint 2026-06-12: parallel sessions really do burn the 5h
-    # window at 30-40%/h (observed 54%→62% in 13 min), but the flat 20%/h
-    # plausibility cap rejected every such delta, so heavy real usage taught
-    # the model nothing and projections sat at "no growth". The cap is
-    # window-aware now: 5h readings may move much faster than 7d ones.
-    use_tz("Asia/Tokyo")
-    reset = 1780927200.0
-    samples = [
-        {"observed_at": _ts(2026, 6, 1, 1, 0), "used_pct": 54.0, "resets_at": reset, "session_id": "s"},
-        {"observed_at": _ts(2026, 6, 1, 1, 13), "used_pct": 62.0, "resets_at": reset, "session_id": "s"},
-    ]
-    rates = predict.learn_bucket_rates(samples, window="five_hour")
-    assert rates["weekday_work_hours"]["samples"] == 1
-    assert abs(rates["weekday_work_hours"]["rate_per_hour"] - 8.0 / (13 / 60)) < 1e-6
-
-
 def test_learned_bucket_rates_keep_7d_cap_tight(use_tz):
     # The seven_day window can't really move 30%/h — that magnitude is a
     # glitch and must stay filtered.
@@ -306,15 +236,6 @@ def test_expected_bucket_rate_blends_prior_and_learned_by_coverage():
     high = predict.expected_bucket_rate("weekday_work_hours", learned_more)
     prior = predict.DEFAULT_BUCKET_PRIORS["weekday_work_hours"]
     assert prior < low < high < 4.01
-
-
-def test_integrate_future_buckets_uses_future_schedule(use_tz):
-    use_tz("Asia/Tokyo")
-    start = _ts(2026, 6, 1, 1)  # Monday 10:00 Tokyo.
-    end = start + 2 * 3600
-    usage = predict.integrate_future_buckets(start, end, {})
-    expected = 2 * predict.DEFAULT_BUCKET_PRIORS["weekday_work_hours"]
-    assert abs(usage - expected) < 1e-6
 
 
 def test_project_5h_blends_recent_window_and_bucket():

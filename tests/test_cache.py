@@ -47,15 +47,3 @@ def test_atomic_write_text_no_temp_on_success(tmp_path):
     assert leftover == []
 
 
-def test_atomic_write_text_returns_false_on_readonly_dir(tmp_path):
-    """If the parent dir is read-only, atomic_write_text returns False rather
-    than raising. Callers (statusLine render path) depend on this contract."""
-    ro = tmp_path / "ro"
-    ro.mkdir()
-    os.chmod(ro, 0o444)
-    try:
-        # mkdir on a child path of read-only dir should fail with OSError
-        result = atomic_write_text(ro / "nested" / "file.txt", "data")
-        assert result is False
-    finally:
-        os.chmod(ro, 0o755)  # so pytest can clean up

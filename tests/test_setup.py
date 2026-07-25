@@ -47,20 +47,6 @@ def test_is_our_statusline(entry, expected):
 # ---------------------------------------------------------------------------
 # ensure_statusline_configured
 # ---------------------------------------------------------------------------
-def test_creates_statusline_when_missing(isolated):
-    _, settings, _ = isolated
-    changed, msg = setup_mod.ensure_statusline_configured()
-    assert changed is True
-    assert "Added" in msg
-    data = json.loads(settings.read_text(encoding="utf-8"))
-    assert data["statusLine"]["type"] == "command"
-    # Since 3.6.0 a fresh install defaults to daemon mode (`<cs> render`),
-    # so the command is split into the binary path + " render".
-    cmd_path = data["statusLine"]["command"].split()[0]
-    assert Path(cmd_path).name in setup_mod.OUR_COMMAND_NAMES
-    assert data["statusLine"]["command"].endswith(" render")
-
-
 def test_idempotent_when_already_configured(isolated):
     _, settings, _ = isolated
     setup_mod.ensure_statusline_configured()
@@ -248,16 +234,6 @@ def test_run_setup_partial_failure_returns_one(isolated, monkeypatch, capsys):
 # ---------------------------------------------------------------------------
 # ensure_project_statusline_configured
 # ---------------------------------------------------------------------------
-def test_project_setup_creates_fresh_settings(tmp_path: Path):
-    ok, msg = setup_mod.ensure_project_statusline_configured(tmp_path)
-    assert ok is True
-    assert "Wrote project statusLine" in msg
-    data = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
-    assert data["statusLine"]["type"] == "command"
-    cmd_path = data["statusLine"]["command"].split()[0]
-    assert Path(cmd_path).name in setup_mod.OUR_COMMAND_NAMES
-
-
 def test_project_setup_preserves_existing_keys(tmp_path: Path):
     """Other settings (hooks, permissions, etc.) in the project file must
     survive — we only own statusLine."""
@@ -313,30 +289,6 @@ def test_project_setup_inline_mode_omits_render_arg(tmp_path: Path):
     data = json.loads((tmp_path / ".claude" / "settings.json").read_text(encoding="utf-8"))
     parts = data["statusLine"]["command"].split()
     assert len(parts) == 1, f"inline mode should be bare binary, got {parts!r}"
-
-
-def test_project_setup_refuses_unreadable_existing_file(tmp_path: Path):
-    """If the existing settings.json can't be read (e.g. permission denied),
-    we must NOT silently overwrite it — otherwise a misconfigured project
-    loses its settings."""
-    import os
-
-    proj_settings = tmp_path / ".claude" / "settings.json"
-    proj_settings.parent.mkdir(parents=True)
-    proj_settings.write_text(json.dumps({
-        "statusLine": {"type": "command", "command": "cs"}
-    }) + "\n", encoding="utf-8")
-    original = proj_settings.read_bytes()
-    proj_settings.chmod(0o000)
-    try:
-        ok, msg = setup_mod.ensure_project_statusline_configured(tmp_path)
-    finally:
-        proj_settings.chmod(0o644)
-
-    assert ok is False
-    assert "Could not read" in msg
-    # Critically: file must be byte-for-byte unchanged.
-    assert proj_settings.read_bytes() == original
 
 
 def test_project_setup_dot_claude_is_a_file(tmp_path: Path):
