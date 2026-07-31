@@ -9,6 +9,36 @@ For a quick overview of the latest release, see the
 
 ---
 
+## v3.32.3 — 2026-07-27
+
+**Installer polish — three papercuts visible on every re-install.**
+
+- `install.sh` ended with `bash: line 1: tmp: unbound variable`. The cleanup trap referenced a variable declared `local` inside the download function, so by the time the `EXIT` trap fired it was out of scope — which under `set -u` errored *and* meant the downloaded tarball's temp dir was never cleaned up. The scratch dir is now a global with a proper cleanup trap.
+- `cs --setup reported an issue` was printed on every re-install even when everything succeeded. Setup lumped "this file exists with your edits, so we kept it" — a benign, expected outcome when re-running the installer — into the same bucket as genuine copy failures. Skipped and failed are now separate, and only real failures affect the exit code. The status was also computed inside an `if verbose:` block, so the same run returned 0 quietly and 1 verbosely; it no longer depends on verbosity.
+- `cs hud` printed its install/uninstall/stop messages and errors in Chinese inside an otherwise English installer — leftovers from the v3.31.0 HUD English-ification.
+
+---
+
+## v3.32.2 — 2026-07-27
+
+**Fixes a crash that broke the status line for every standalone-binary user ([#36](https://github.com/leeguooooo/claude-code-usage-bar/issues/36)).**
+
+Once the daemon had run at least once, `cs render` died on *every* tick with `ValueError: max() iterable argument is empty` — the bar flashed and vanished in Claude Code. `_pkg_mtime()` scanned the package dir for `.py` files to detect a daemon running stale code, but a PyInstaller onefile build has none (modules live in the PYZ archive), so `max()` got an empty iterable and raised `ValueError`, which the `except OSError` guard did not catch. Affected every binary release (v3.30.0–v3.32.1); pip/uv installs were never affected.
+
+Frozen builds now use the executable's own mtime, so the stale-daemon detection keeps working there — re-running `install.sh` replaces the binary, which is exactly the "installed code is newer than the daemon" signal it needs.
+
+**`cs doctor` now actually renders.** It reported all-green while the status line was dead, because every check inspected state and none exercised the render path. It now runs a real `cs render` with your cached payload and prints the traceback when it crashes — this class of bug can't hide behind a green report again.
+
+Thanks to [@gasbasd](https://github.com/gasbasd) for a report that pinpointed the root cause, the trigger condition, and the fix.
+
+---
+
+## v3.32.1 — 2026-07-22
+
+**Patch: `cs --version` program name + test determinism.** `cs --version` now derives its program name from `basename(argv[0])` rather than argparse's `%(prog)s` — Python 3.14 rewrites `%(prog)s` to `python3.x -m module` under `-m`, which mangled the prefix. The three aliases (`cs` / `cstatus` / `claude-statusbar`) now each show their real name on every Python version. Also made `test_preview` deterministic by forcing the demo dataset instead of depending on the machine's cached stdin (which can legitimately have no warm cache or cost).
+
+---
+
 ## v3.32.0 — 2026-07-22
 
 **One command installs everything.** The `curl … install.sh | bash` one-liner now sets up *both* surfaces on macOS: the terminal statusLine **and** the floating desktop HUD. The macOS binary bundles the HUD (PyObjC) — no `pip install 'claude-statusbar[hud]'`, no venv, no extra steps. When the installer detects the Claude desktop app it registers the HUD to auto-start on login, and it rides the binary's own auto-update like everything else. Linux binaries are unchanged (the HUD is macOS-only).

@@ -1076,6 +1076,8 @@ def test_windows_identity_false_when_no_shell_available(monkeypatch):
     )
 
     assert _d._process_is_our_daemon(4242) is False
+
+
 MODULE_STATUSLINE = "C:/Users/x/miniconda3/python.exe -m claude_statusbar.cli render"
 
 

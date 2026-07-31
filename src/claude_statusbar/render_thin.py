@@ -56,17 +56,33 @@ _PKG_DIR = Path(__file__).resolve().parent
 
 
 def _pkg_mtime() -> float:
-    """Newest mtime among files in the installed package directory.
+    """Newest mtime of the installed code, whichever form it takes.
 
     Used to detect "running daemon is older than the code on disk" (i.e.
-    the user just upgraded via PyPI but the long-lived daemon is still
-    serving stale renders). One `os.scandir` per render tick — cheap.
-    Returns 0 on any I/O error so the freshness check degrades to its
-    pre-upgrade behavior rather than thrashing.
+    the user just upgraded but the long-lived daemon is still serving stale
+    renders). One `os.scandir` per render tick — cheap. Returns 0 on any I/O
+    error so the freshness check degrades to its pre-upgrade behavior rather
+    than thrashing.
+
+    Frozen (PyInstaller onefile) builds have no loose `.py` files to scan:
+    pure-Python modules live inside the PYZ archive, and the self-extracted
+    `_MEIxxxx` dir is recreated per run, so its mtimes are meaningless anyway.
+    Use the executable's own mtime there — re-running install.sh replaces the
+    binary, which is exactly the "installed code is newer than the daemon"
+    signal this function exists to provide. (Scanning it instead yielded an
+    empty `max()` → uncaught ValueError → every render crashed once a daemon
+    session was cached; issue #36.)
     """
+    if getattr(sys, "frozen", False):
+        try:
+            return os.stat(sys.executable).st_mtime
+        except OSError:
+            return 0.0
     try:
-        return max(e.stat().st_mtime for e in os.scandir(_PKG_DIR)
-                   if e.name.endswith(".py"))
+        # `default=` matters: a package dir with no .py files (frozen-like or
+        # exotic install layouts) must degrade to 0.0, not raise ValueError.
+        return max((e.stat().st_mtime for e in os.scandir(_PKG_DIR)
+                    if e.name.endswith(".py")), default=0.0)
     except OSError:
         return 0.0
 
@@ -171,7 +187,11 @@ def _displacement_suffix() -> str:
         # `<python> -m claude_statusbar.cli render` — ours, just not via the
         # console script. See setup._invokes_our_module.
         return ""
-    name = Path(cmd.strip().split()[0]).name.lower()
+    # Split on both separators rather than via Path: a `C:\...\cs.EXE` entry
+    # must still reduce to its basename when this code runs on POSIX (CI, and
+    # a settings.json synced off a Windows box), where PosixPath keeps the
+    # whole backslash string as one `.name`.
+    name = cmd.strip().split()[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
     for _ext in (".exe", ".cmd", ".bat"):
         if name.endswith(_ext):
             name = name[: -len(_ext)]
