@@ -22,15 +22,29 @@ FAINT = "\033[2m"   # dim/faint attribute — makes a grey recede even further
 # banned on the per-render import graph, but a lazy call here (only when the
 # version segment is on) is fine: it's not an import-time edge, and the daemon
 # pays it once per process. Empty string if it can't be determined.
+#
+# Source checkouts (pip install -e) run the working tree, but dist metadata
+# stays frozen at install time — `git pull` never refreshes it, so the pill
+# lies. Prefer the checkout's own pyproject.toml when it exists.
 _VERSION_CACHE = None
 def _statusbar_version() -> str:
     global _VERSION_CACHE
     if _VERSION_CACHE is None:
         try:
-            import importlib.metadata as _m
-            _VERSION_CACHE = _m.version("claude-statusbar")
+            import re as _re
+            from pathlib import Path as _Path
+            # ponytail: regex over tomllib — tomllib is 3.11+, this repo runs 3.9
+            pp = _Path(__file__).resolve().parents[2] / "pyproject.toml"
+            m = _re.search(r'^version\s*=\s*"([^"]+)"', pp.read_text(encoding="utf-8"), _re.M)
+            _VERSION_CACHE = m.group(1) if m else ""
         except Exception:
             _VERSION_CACHE = ""
+        if not _VERSION_CACHE:
+            try:
+                import importlib.metadata as _m
+                _VERSION_CACHE = _m.version("claude-statusbar")
+            except Exception:
+                _VERSION_CACHE = ""
     return _VERSION_CACHE
 
 

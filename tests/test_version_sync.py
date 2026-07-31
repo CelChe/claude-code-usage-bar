@@ -33,3 +33,10 @@ def test_marketplace_and_plugin_versions_match_pyproject():
         f"plugin.json version={plg['version']!r} != pyproject {v!r} "
         f"— bump .claude-plugin/plugin.json on release"
     )
+
+def test_statusbar_version_reads_working_tree_pyproject(monkeypatch):
+    """Editable installs run working-tree code; the pill must show the
+    working-tree version, not stale install-time dist metadata."""
+    import claude_statusbar.styles as styles
+    monkeypatch.setattr(styles, "_VERSION_CACHE", None)
+    assert styles._statusbar_version() == _pyproject_version()
